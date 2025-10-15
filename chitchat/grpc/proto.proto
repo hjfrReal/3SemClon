@@ -1,6 +1,6 @@
 syntax = "proto3";
 package chitchat;
-option go_package = "github.com/3SemClon/chitchit/grpc;proto";
+option go_package = "github.com/3SemClon/chitchat/grpc;proto";
 
 
 service ChitChatService {

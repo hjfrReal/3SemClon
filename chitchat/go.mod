@@ -1,4 +1,4 @@
-module ChitChat
+module github.com/3SemClon/chitchat
 
 go 1.25.0
 
@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/google/uuid v1.6.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
