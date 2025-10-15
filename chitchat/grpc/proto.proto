@@ -1,0 +1,40 @@
+syntax = "proto3";
+package chitchat;
+option go_package = "github.com/3SemClon/chitchit/grpc;proto";
+
+
+service ChitChatService {
+    rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+    rpc JoinChat(JoinRequest) returns (JoinResponse);
+    rpc LeaveChat(LeaveRequest) returns (LeaveResponse);
+}
+
+message User {
+    string id = 1;
+    string name = 2;
+}
+
+message JoinRequest {
+    string name = 1;
+}
+
+message JoinResponse {
+    string id = 1;
+}
+
+message LeaveRequest {
+    string id = 1;
+}
+
+message LeaveResponse {
+    bool success = 1;
+}
+
+message ChatMessage {
+    string sender_id = 1;
+    string message_content = 2;
+    int64 timestamp =3;
+}
+
+
+ 
