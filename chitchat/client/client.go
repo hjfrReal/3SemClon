@@ -17,7 +17,7 @@ var logicalTimestamp int64 = 0
 
 func main() {
 	// Connect to server
-	conn, err := grpc.NewClient("localhost:5050", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial("localhost:5050", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
@@ -37,6 +37,12 @@ func main() {
 	}
 	userID := joinResp.Id
 	fmt.Printf("Joined as %s (ID: %s)\n", name, userID)
+
+	defer func() {
+		if _, err := client.LeaveChat(context.Background(), &proto.LeaveRequest{Id: userID}); err != nil {
+			log.Printf("LeaveChat failed: %v", err)
+		}
+	}()
 
 	// Open log file
 	logFile, err := os.OpenFile("chat.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -65,6 +71,7 @@ func main() {
 				log.Printf("Receive error: %v", err)
 				return
 			}
+			logicalTimestamp = max(logicalTimestamp, msg.Timestamp) + 1
 			display := fmt.Sprintf("[%d] %s: %s", msg.Timestamp, msg.SenderName, msg.MessageContent)
 			fmt.Println(display)
 			logFile.WriteString(display + "\n")
@@ -83,6 +90,7 @@ func main() {
 			fmt.Println("Message too long (max 128 chars).")
 			continue
 		}
+		logicalTimestamp++
 		chatMsg := &proto.ChatMessage{
 			SenderId:       userID,
 			SenderName:     name,
@@ -93,14 +101,6 @@ func main() {
 			log.Printf("Send error: %v", err)
 			break
 		}
-		logicalTimestamp = max(logicalTimestamp, chatMsg.Timestamp) + 1
 	}
 
-	// Leave chat on exit
-	finally {
-	_, err = client.LeaveChat(context.Background(), &proto.LeaveRequest{Id: userID})
-	if err != nil {
-		log.Printf("LeaveChat failed: %v", err)
-	}
-}
 }

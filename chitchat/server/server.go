@@ -2,13 +2,21 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
+	"sync"
 
 	proto "github.com/3SemClon/chitchat/grpc"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )
+
+type LamportClock struct {
+	id        int
+	timestamp int
+	mu        sync.Mutex
+}
 
 type user struct {
 	id     string
@@ -45,18 +53,22 @@ func (s *server) JoinChat(ctx context.Context, req *proto.JoinRequest) (*proto.J
 func (s *server) LeaveChat(ctx context.Context, req *proto.LeaveRequest) (*proto.LeaveResponse, error) {
 	userID := req.Id
 
-	if _, ok := s.users[userID]; ok {
-		delete(s.users, userID)
-		return &proto.LeaveResponse{Success: true}, nil
+	user, exists := s.users[userID]
+	if !exists {
+		return &proto.LeaveResponse{Success: false}, nil
+	}
 
+	for _, otherUser := range s.users {
+		if otherUser.stream != nil {
+			otherUser.stream.Send(&proto.ChatMessage{
+				SenderId:       "System",
+				MessageContent: user.name + " has left the chat.",
+			})
+		}
 	}
-	for _, user := range s.users {
-		user.stream.Send(&proto.ChatMessage{
-			SenderId:       "System",
-			MessageContent: s.users[userID].name + " has left the chat.",
-		})
-	}
-	return &proto.LeaveResponse{Success: false}, nil
+
+	delete(s.users, userID)
+	return &proto.LeaveResponse{Success: true}, nil
 }
 
 func (s *server) Chat(stream proto.ChitChatService_ChatServer) error {
@@ -66,12 +78,28 @@ func (s *server) Chat(stream proto.ChitChatService_ChatServer) error {
 	}
 
 	userID := initMessage.SenderId
-	s.users[userID].stream = stream
+	user, exists := s.users[userID]
+	if !exists {
+		return fmt.Errorf("user not found")
+	}
+
+	user.stream = stream
+
+	defer func() {
+		for _, otherUser := range s.users {
+			if otherUser.id != userID && otherUser.stream != nil {
+				otherUser.stream.Send(&proto.ChatMessage{
+					SenderId:       "System",
+					MessageContent: user.name + " has left the chat.",
+				})
+			}
+		}
+		delete(s.users, userID)
+	}()
 
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
-			s.users[userID].stream = nil
 			return err
 		}
 		for _, user := range s.users {
