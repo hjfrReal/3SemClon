@@ -32,8 +32,9 @@ message LeaveResponse {
 
 message ChatMessage {
     string sender_id = 1;
-    string message_content = 2;
-    int64 timestamp =3;
+    string sender_name = 2;
+    string message_content = 3;
+    int64 timestamp = 4;
 }
 
 

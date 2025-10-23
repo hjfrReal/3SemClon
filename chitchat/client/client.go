@@ -7,15 +7,17 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	proto "github.com/3SemClon/chitchat/grpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
+
+var logicalTimestamp int64 = 0
 
 func main() {
 	// Connect to server
-	conn, err := grpc.Dial("localhost:5050", grpc.WithInsecure())
+	conn, err := grpc.NewClient("localhost:5050", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
@@ -63,7 +65,7 @@ func main() {
 				log.Printf("Receive error: %v", err)
 				return
 			}
-			display := fmt.Sprintf("[%d] %s: %s", msg.Timestamp, msg.SenderName, msg.Content)
+			display := fmt.Sprintf("[%d] %s: %s", msg.Timestamp, msg.SenderName, msg.MessageContent)
 			fmt.Println(display)
 			logFile.WriteString(display + "\n")
 		}
@@ -82,20 +84,23 @@ func main() {
 			continue
 		}
 		chatMsg := &proto.ChatMessage{
-			SenderId:   userID,
-			SenderName: name,
-			Content:    text,
-			Timestamp:  time.Now().Unix(), // Replace with logical timestamp if needed
+			SenderId:       userID,
+			SenderName:     name,
+			MessageContent: text,
+			Timestamp:      logicalTimestamp,
 		}
 		if err := stream.Send(chatMsg); err != nil {
 			log.Printf("Send error: %v", err)
 			break
 		}
+		logicalTimestamp = max(logicalTimestamp, chatMsg.Timestamp) + 1
 	}
 
 	// Leave chat on exit
+	finally {
 	_, err = client.LeaveChat(context.Background(), &proto.LeaveRequest{Id: userID})
 	if err != nil {
 		log.Printf("LeaveChat failed: %v", err)
 	}
+}
 }

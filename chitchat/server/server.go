@@ -30,7 +30,16 @@ func (s *server) JoinChat(ctx context.Context, req *proto.JoinRequest) (*proto.J
 	}
 
 	s.users[userID] = newUser
+	for _, user := range s.users {
+		if user.id != userID && user.stream != nil {
+			user.stream.Send(&proto.ChatMessage{
+				SenderId:       "System",
+				MessageContent: req.Name + " has joined the chat.",
+			})
+		}
+	}
 	return &proto.JoinResponse{Id: userID}, nil
+
 }
 
 func (s *server) LeaveChat(ctx context.Context, req *proto.LeaveRequest) (*proto.LeaveResponse, error) {
@@ -40,6 +49,12 @@ func (s *server) LeaveChat(ctx context.Context, req *proto.LeaveRequest) (*proto
 		delete(s.users, userID)
 		return &proto.LeaveResponse{Success: true}, nil
 
+	}
+	for _, user := range s.users {
+		user.stream.Send(&proto.ChatMessage{
+			SenderId:       "System",
+			MessageContent: s.users[userID].name + " has left the chat.",
+		})
 	}
 	return &proto.LeaveResponse{Success: false}, nil
 }

@@ -252,8 +252,9 @@ func (x *LeaveResponse) GetSuccess() bool {
 type ChatMessage struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	SenderId       string                 `protobuf:"bytes,1,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
-	MessageContent string                 `protobuf:"bytes,2,opt,name=message_content,json=messageContent,proto3" json:"message_content,omitempty"`
-	Timestamp      int64                  `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	SenderName     string                 `protobuf:"bytes,2,opt,name=sender_name,json=senderName,proto3" json:"sender_name,omitempty"`
+	MessageContent string                 `protobuf:"bytes,3,opt,name=message_content,json=messageContent,proto3" json:"message_content,omitempty"`
+	Timestamp      int64                  `protobuf:"varint,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -295,6 +296,13 @@ func (x *ChatMessage) GetSenderId() string {
 	return ""
 }
 
+func (x *ChatMessage) GetSenderName() string {
+	if x != nil {
+		return x.SenderName
+	}
+	return ""
+}
+
 func (x *ChatMessage) GetMessageContent() string {
 	if x != nil {
 		return x.MessageContent
@@ -324,15 +332,17 @@ const file_grpc_proto_proto_rawDesc = "" +
 	"\fLeaveRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\")\n" +
 	"\rLeaveResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"q\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x92\x01\n" +
 	"\vChatMessage\x12\x1b\n" +
-	"\tsender_id\x18\x01 \x01(\tR\bsenderId\x12'\n" +
-	"\x0fmessage_content\x18\x02 \x01(\tR\x0emessageContent\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp2\xc4\x01\n" +
+	"\tsender_id\x18\x01 \x01(\tR\bsenderId\x12\x1f\n" +
+	"\vsender_name\x18\x02 \x01(\tR\n" +
+	"senderName\x12'\n" +
+	"\x0fmessage_content\x18\x03 \x01(\tR\x0emessageContent\x12\x1c\n" +
+	"\ttimestamp\x18\x04 \x01(\x03R\ttimestamp2\xc4\x01\n" +
 	"\x0fChitChatService\x128\n" +
 	"\x04Chat\x12\x15.chitchat.ChatMessage\x1a\x15.chitchat.ChatMessage(\x010\x01\x129\n" +
 	"\bJoinChat\x12\x15.chitchat.JoinRequest\x1a\x16.chitchat.JoinResponse\x12<\n" +
-	"\tLeaveChat\x12\x16.chitchat.LeaveRequest\x1a\x17.chitchat.LeaveResponseB*Z(github.com/3SemClon/Exercise3/grpc/protob\x06proto3"
+	"\tLeaveChat\x12\x16.chitchat.LeaveRequest\x1a\x17.chitchat.LeaveResponseB)Z'github.com/3SemClon/chitchat/grpc;protob\x06proto3"
 
 var (
 	file_grpc_proto_proto_rawDescOnce sync.Once
