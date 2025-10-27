@@ -13,8 +13,8 @@ import (
 )
 
 type LamportClock struct {
-	id        int
-	timestamp int
+	id        int64
+	Timestamp int64
 	mu        sync.Mutex
 }
 
@@ -27,9 +27,31 @@ type user struct {
 type server struct {
 	proto.UnimplementedChitChatServiceServer
 	users map[string]*user
+	clock *LamportClock
+}
+
+func (lc *LamportClock) Tick() {
+	lc.mu.Lock()
+	lc.Timestamp++
+	lc.mu.Unlock()
+}
+
+func (lc *LamportClock) UpdateClock(receivedTimestamp int64) {
+	lc.mu.Lock()
+	if receivedTimestamp > lc.Timestamp {
+		lc.Timestamp = receivedTimestamp
+	}
+	lc.Timestamp++
+	lc.mu.Unlock()
+}
+func (lc *LamportClock) GetTime() int64 {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	return lc.Timestamp
 }
 
 func (s *server) JoinChat(ctx context.Context, req *proto.JoinRequest) (*proto.JoinResponse, error) {
+	s.clock.Tick()
 	userID := uuid.New().String()
 
 	newUser := &user{
@@ -51,6 +73,7 @@ func (s *server) JoinChat(ctx context.Context, req *proto.JoinRequest) (*proto.J
 }
 
 func (s *server) LeaveChat(ctx context.Context, req *proto.LeaveRequest) (*proto.LeaveResponse, error) {
+	s.clock.Tick()
 	userID := req.Id
 
 	user, exists := s.users[userID]
@@ -119,7 +142,7 @@ func GetActiveUsers(s *server) []string {
 }
 
 func main() {
-	server := &server{users: make(map[string]*user)}
+	server := &server{users: make(map[string]*user), clock: &LamportClock{Timestamp: 0}}
 
 	server.start_server()
 }

@@ -23,19 +23,19 @@ Log it (store locally).
 
 Checklist:
 
-Design the gRPC API
-Define .proto file(s) with message types (e.g., ChatMessage, JoinRequest, LeaveNotice) and service methods (e.g., SendMessage(), Join(), Leave(), ReceiveStream()).
-Implement the Server (Chit Chat Service)
-Handle joins/leaves.
-Broadcast messages (with logical timestamps).
-Keep track of active clients.
-Implement the Clients
-Connect to the server.
-Send messages.
-Receive broadcasts (streaming).
-Display + log messages with timestamps.
-Add Logical Clocks
-Use Lamport timestamps (or similar) to assign logical times to events (send, join, leave).
-Test It
-Run one server and at least three clients concurrently.
-Verify that messages, joins, and leaves are broadcast correctly and in timestamp order.
+Design the gRPC API +
+Define .proto file(s) with message types (e.g., ChatMessage, JoinRequest, LeaveNotice) and service methods (e.g., SendMessage(), Join(), Leave(), ReceiveStream()).+
+Implement the Server (Chit Chat Service) +
+Handle joins/leaves. -
+Broadcast messages (with logical timestamps). +
+Keep track of active clients. 
+Implement the Clients +
+Connect to the server. +
+Send messages. +
+Receive broadcasts (streaming). +
+Display + log messages with timestamps. +
+Add Logical Clocks (implement it when joining and leaving)
+Use Lamport timestamps (or similar) to assign logical times to events (send, join, leave). +
+Test It +
+Run one server and at least three clients concurrently. +
+Verify that messages, joins, and leaves are broadcast correctly and in timestamp order. +
