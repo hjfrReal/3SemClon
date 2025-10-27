@@ -7,13 +7,38 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	proto "github.com/3SemClon/chitchat/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-var logicalTimestamp int64 = 0
+type LamportClock struct {
+	id        int64
+	Timestamp int64
+	mu        sync.Mutex
+}
+
+func (lc *LamportClock) Tick() {
+	lc.mu.Lock()
+	lc.Timestamp++
+	lc.mu.Unlock()
+}
+
+func (lc *LamportClock) UpdateClock(receivedTimestamp int64) {
+	lc.mu.Lock()
+	if receivedTimestamp > lc.Timestamp {
+		lc.Timestamp = receivedTimestamp
+	}
+	lc.Timestamp++
+	lc.mu.Unlock()
+}
+func (lc *LamportClock) GetTime() int64 {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	return lc.Timestamp
+}
 
 func main() {
 	// Connect to server
@@ -29,8 +54,9 @@ func main() {
 	reader := bufio.NewReader(os.Stdin)
 	name, _ := reader.ReadString('\n')
 	name = strings.TrimSpace(name)
-
+	lc := &LamportClock{id: 1, Timestamp: 0}
 	// Join chat
+	lc.Tick()
 	joinResp, err := client.JoinChat(context.Background(), &proto.JoinRequest{Name: name})
 	if err != nil {
 		log.Fatalf("JoinChat failed: %v", err)
@@ -39,6 +65,7 @@ func main() {
 	fmt.Printf("Joined as %s (ID: %s)\n", name, userID)
 
 	defer func() {
+		lc.Tick()
 		if _, err := client.LeaveChat(context.Background(), &proto.LeaveRequest{Id: userID}); err != nil {
 			log.Printf("LeaveChat failed: %v", err)
 		}
@@ -71,8 +98,8 @@ func main() {
 				log.Printf("Receive error: %v", err)
 				return
 			}
-			logicalTimestamp = max(logicalTimestamp, msg.Timestamp) + 1
-			display := fmt.Sprintf("[%d] %s: %s", msg.Timestamp, msg.SenderName, msg.MessageContent)
+			lc.UpdateClock(msg.Timestamp)
+			display := fmt.Sprintf("[%d] %s: %s", lc.GetTime(), msg.SenderName, msg.MessageContent)
 			fmt.Println(display)
 			logFile.WriteString(display + "\n")
 		}
@@ -90,12 +117,12 @@ func main() {
 			fmt.Println("Message too long (max 128 chars).")
 			continue
 		}
-		logicalTimestamp++
+		lc.Tick()
 		chatMsg := &proto.ChatMessage{
 			SenderId:       userID,
 			SenderName:     name,
 			MessageContent: text,
-			Timestamp:      logicalTimestamp,
+			Timestamp:      int64(lc.GetTime()),
 		}
 		if err := stream.Send(chatMsg); err != nil {
 			log.Printf("Send error: %v", err)
