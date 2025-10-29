@@ -6,3 +6,4 @@
 6. Every client/user will be required to give a username before entering. Type in whatever name you wish.
 7. You are now free to chat!
 8. When you wish to leave the chat press: Ctrl + C
+9. If you wish to shut down the server press:Ctrl + C in the server terminal.
