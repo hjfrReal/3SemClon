@@ -1,0 +1,25 @@
+syntax = "proto3";
+package Node;
+option go_package = "github.com/3SemClon/Node/grpc;proto";
+
+service NodeService {
+    rpc RequestAccess(RequestMessage) returns (RequestResponse);
+    rpc ReplyAccess(ReplyMessage) returns (ReplyResponse);
+}
+
+message RequestMessage {
+    string node_id = 1;
+    int64 timestamp = 2;
+}
+
+message ReplyMessage {
+    string node_id = 1;
+    bool access_granted = 2;
+}
+message RequestResponse {
+    string node_id = 1;
+}
+message ReplyResponse {
+    string node_id = 1;
+    bool access_granted = 2;
+}
