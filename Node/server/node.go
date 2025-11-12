@@ -22,6 +22,7 @@ type server struct {
 	proto.UnimplementedNodeServiceServer
 	node  map[string]*Node
 	clock *LamportClock
+	id    string // added: which node this server represents
 }
 
 type Node struct {
@@ -71,7 +72,7 @@ func NewNode(id string, clock *LamportClock) *Node {
 		clock:          clock,
 		timestamp:      clock.GetTime(),
 		otherNodes:     make(map[string]proto.NodeServiceClient),
-		replyChannel:   make(chan bool),
+		replyChannel:   make(chan bool, 1),
 		requestCS:      false,
 		replyCount:     0,
 		delayedReplies: make([]string, 0),
@@ -119,10 +120,12 @@ func (n *Node) RequestCriticalSection(clock *LamportClock) {
 			clock.Tick()
 			_, err := c.RequestAccess(context.Background(), req)
 			if err != nil {
-				log.Printf("Error requesting access from peer: %v", err)
+				log.Printf("Error requesting access from peer %s: %v", pid, err)
 			}
 		}(peerId, client)
 	}
+
+	// wait for replies from all peers
 	<-n.replyChannel
 	log.Printf("Node %s entering critical section", n.id)
 	n.EnterCriticalSection()
@@ -135,6 +138,7 @@ func (n *Node) EnterCriticalSection() {
 	n.mu.Lock()
 	n.requestCS = false
 
+	// send deferred replies to nodes in delayedReplies
 	for _, deferredNodeId := range n.delayedReplies {
 		client, ok := n.otherNodes[deferredNodeId]
 		if ok {
@@ -158,71 +162,87 @@ func (n *Node) EnterCriticalSection() {
 }
 
 func (s *server) RequestAccess(ctx context.Context, req *proto.RequestMessage) (*proto.RequestResponse, error) {
+	// update server clock with incoming timestamp
 	s.clock.UpdateClock(req.Timestamp)
 
+	// lookup the local node that this server represents
 	globalNodesMutex.Lock()
-	node := globalNodes[req.NodeId]
+	local := globalNodes[s.id]
 	globalNodesMutex.Unlock()
 
-	if node == nil {
+	if local == nil {
 		return &proto.RequestResponse{NodeId: req.NodeId, AccessGranted: false}, nil
 	}
 
-	node.mu.Lock()
-	defer node.mu.Unlock()
+	local.mu.Lock()
+	defer local.mu.Unlock()
 
 	deferReply := false
 
-	if node.requestCS {
-		if req.Timestamp < node.timestamp {
-			deferReply = true
-		} else if req.Timestamp == node.timestamp && req.NodeId < node.id {
+	// Ricart-Agrawala rule:
+	// If local is requesting and local has priority (local.timestamp < req.Timestamp OR equal and local.id < req.NodeId)
+	// then defer reply. (local has priority -> do not reply)
+	if local.requestCS {
+		if local.timestamp < req.Timestamp || (local.timestamp == req.Timestamp && local.id < req.NodeId) {
 			deferReply = true
 		}
 	}
+
 	if deferReply {
-		node.delayedReplies = append(node.delayedReplies, req.NodeId)
+		local.delayedReplies = append(local.delayedReplies, req.NodeId)
+		log.Printf("Node %s deferring reply to %s (local ts=%d, req ts=%d)", local.id, req.NodeId, local.timestamp, req.Timestamp)
 	} else {
-		client, ok := node.otherNodes[req.NodeId]
+		// reply immediately by calling ReplyAccess on the requester
+		client, ok := local.otherNodes[req.NodeId]
 		if ok {
-			go func(c proto.NodeServiceClient) {
+			go func(c proto.NodeServiceClient, requester string) {
 				s.clock.Tick()
-				_, err := c.ReplyAccess(ctx, &proto.ReplyMessage{
-					NodeId:        node.id,
+				_, err := c.ReplyAccess(context.Background(), &proto.ReplyMessage{
+					NodeId:        local.id,
 					AccessGranted: true,
 					Timestamp:     s.clock.GetTime(),
 				})
 				if err != nil {
-					log.Printf("Error sending reply to node %s: %v", req.NodeId, err)
+					log.Printf("Error sending immediate reply to %s: %v", requester, err)
 				} else {
-					log.Printf("Replied to node %s immediately", req.NodeId)
+					log.Printf("Node %s replied immediately to %s", local.id, requester)
 				}
-			}(client)
+			}(client, req.NodeId)
+		} else {
+			log.Printf("Node %s has no client to %s to send immediate reply", local.id, req.NodeId)
 		}
 	}
-	return &proto.RequestResponse{NodeId: node.id, AccessGranted: true}, nil
+
+	return &proto.RequestResponse{NodeId: local.id, AccessGranted: true}, nil
 }
 
 func (s *server) ReplyAccess(ctx context.Context, reply *proto.ReplyMessage) (*proto.ReplyResponse, error) {
+	// update clock with reply timestamp
 	s.clock.UpdateClock(reply.Timestamp)
 
+	// local node is the one receiving this reply
 	globalNodesMutex.Lock()
-	node := globalNodes[reply.NodeId]
+	local := globalNodes[s.id]
 	globalNodesMutex.Unlock()
 
-	if node == nil {
+	if local == nil {
 		return &proto.ReplyResponse{NodeId: reply.NodeId}, nil
 	}
 
-	node.mu.Lock()
-	defer node.mu.Unlock()
-
-	node.replyCount++
-	if node.replyCount == len(node.otherNodes) {
-		node.replyChannel <- true
+	local.mu.Lock()
+	local.replyCount++
+	needed := len(local.otherNodes)
+	log.Printf("Node %s received reply from %s (count %d/%d)", local.id, reply.NodeId, local.replyCount, needed)
+	if local.replyCount >= needed && needed > 0 {
+		// signal requester that all replies are received (non-blocking)
+		select {
+		case local.replyChannel <- true:
+		default:
+		}
 	}
+	local.mu.Unlock()
 
-	return &proto.ReplyResponse{NodeId: node.id}, nil
+	return &proto.ReplyResponse{NodeId: local.id}, nil
 }
 
 func connectAllNodes() {
@@ -278,7 +298,7 @@ func main() {
 }
 
 func startNodeServer(nodeID string, port string) {
-	server := &server{node: make(map[string]*Node), clock: &LamportClock{Timestamp: 0}}
+	server := &server{node: make(map[string]*Node), clock: &LamportClock{Timestamp: 0}, id: nodeID}
 
 	grpcServer := grpc.NewServer()
 	listener, err := net.Listen("tcp", port)
@@ -294,6 +314,7 @@ func startNodeServer(nodeID string, port string) {
 	globalNodes[nodeID] = node
 	globalNodesMutex.Unlock()
 
+	log.Printf("Started server for node %s on %s", nodeID, port)
 	err = grpcServer.Serve(listener)
 	if err != nil {
 		log.Fatalf("Server error: %v", err)
