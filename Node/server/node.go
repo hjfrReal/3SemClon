@@ -22,7 +22,7 @@ type server struct {
 	proto.UnimplementedNodeServiceServer
 	node  map[string]*Node
 	clock *LamportClock
-	id    string // added: which node this server represents
+	id    string // which node this server represents
 }
 
 type Node struct {
@@ -30,10 +30,10 @@ type Node struct {
 	clock          *LamportClock
 	timestamp      int64
 	otherNodes     map[string]proto.NodeServiceClient
-	replyChannel   chan bool
 	requestCS      bool
 	replyCount     int
 	delayedReplies []string
+	pending        map[string]chan struct{} // blocks deferred RequestAccess RPCs
 	mu             sync.Mutex
 }
 
@@ -72,10 +72,10 @@ func NewNode(id string, clock *LamportClock) *Node {
 		clock:          clock,
 		timestamp:      clock.GetTime(),
 		otherNodes:     make(map[string]proto.NodeServiceClient),
-		replyChannel:   make(chan bool, 1),
 		requestCS:      false,
 		replyCount:     0,
 		delayedReplies: make([]string, 0),
+		pending:        make(map[string]chan struct{}),
 		mu:             sync.Mutex{},
 	}
 }
@@ -87,7 +87,7 @@ func (n *Node) ConnectToPeers() error {
 		}
 		var conn *grpc.ClientConn
 		var err error
-		for retries := 0; retries < 5; retries++ { // retry 5 times
+		for retries := 0; retries < 5; retries++ { // retry a few times
 			conn, err = grpc.Dial(address, grpc.WithInsecure())
 			if err == nil {
 				break
@@ -102,67 +102,103 @@ func (n *Node) ConnectToPeers() error {
 	return nil
 }
 
+// RequestCriticalSection uses Lamport clock: Tick before sending request,
+// multicasts RequestAccess and counts RPC returns as replies.
 func (n *Node) RequestCriticalSection(clock *LamportClock) {
 	n.mu.Lock()
-	log.Printf("Node %s is requesting access to critical section", n.id)
 	n.requestCS = true
 	n.replyCount = 0
-	clock.Tick()
+	clock.Tick() // increment before timestamping the request
 	n.timestamp = clock.GetTime()
+	// Log with Lamport timestamp
+	log.Printf("[L=%d] Node %s is requesting access to critical section", n.timestamp, n.id)
 	n.mu.Unlock()
 
 	req := &proto.RequestMessage{
 		NodeId:    n.id,
 		Timestamp: n.timestamp,
 	}
+
+	needed := len(n.otherNodes)
+	if needed == 0 {
+		// no peers -> enter CS immediately
+		log.Printf("[L=%d] Node %s entering critical section (no peers)", n.clock.GetTime(), n.id)
+		n.EnterCriticalSection()
+		return
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
 	for peerId, client := range n.otherNodes {
+		wg.Add(1)
 		go func(pid string, c proto.NodeServiceClient) {
-			clock.Tick()
-			_, err := c.RequestAccess(context.Background(), req)
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			// Call RequestAccess; callee may block this RPC (defer reply) until it releases CS.
+			resp, err := c.RequestAccess(ctx, req)
 			if err != nil {
-				log.Printf("Error requesting access from peer %s: %v", pid, err)
+				log.Printf("[L=%d] Error requesting access from peer %s: %v", n.clock.GetTime(), pid, err)
+				return
+			}
+			if resp != nil && resp.AccessGranted {
+				mu.Lock()
+				n.replyCount++
+				log.Printf("[L=%d] Node %s received reply from %s (%d/%d)", n.clock.GetTime(), n.id, pid, n.replyCount, needed)
+				mu.Unlock()
 			}
 		}(peerId, client)
 	}
 
-	// wait for replies from all peers
-	<-n.replyChannel
-	log.Printf("Node %s entering critical section", n.id)
-	n.EnterCriticalSection()
-}
+	// wait for all RPC calls to return
+	wg.Wait()
 
-func (n *Node) EnterCriticalSection() {
-	log.Printf("Node %s is in the critical section", n.id)
-	time.Sleep(2 * time.Second)
-	log.Printf("Node %s is leaving the critical section", n.id)
+	// check replies
+	n.mu.Lock()
+	if n.replyCount >= needed {
+		log.Printf("[L=%d] Node %s entering critical section (got %d/%d replies) at lamport %d", n.clock.GetTime(), n.id, n.replyCount, needed, n.timestamp)
+		n.mu.Unlock()
+		n.EnterCriticalSection()
+		return
+	}
+	n.mu.Unlock()
+
+	// fallback: timeout or partial replies (should not happen in small reliable test)
+	log.Printf("[L=%d] Node %s did not receive enough replies (%d/%d), aborting request", n.clock.GetTime(), n.id, n.replyCount, needed)
 	n.mu.Lock()
 	n.requestCS = false
+	n.mu.Unlock()
+}
 
-	// send deferred replies to nodes in delayedReplies
-	for _, deferredNodeId := range n.delayedReplies {
-		client, ok := n.otherNodes[deferredNodeId]
-		if ok {
-			go func(c proto.NodeServiceClient, nodeId string) {
-				n.clock.Tick()
-				_, err := c.ReplyAccess(context.Background(), &proto.ReplyMessage{
-					NodeId:        n.id,
-					AccessGranted: true,
-					Timestamp:     n.clock.GetTime(),
-				})
-				if err != nil {
-					log.Printf("Error sending deferred reply to node %s: %v", nodeId, err)
-				} else {
-					log.Printf("Sent deferred reply to node %s", nodeId)
-				}
-			}(client, deferredNodeId)
+// EnterCriticalSection: emulate CS and then release, unblocking deferred RPCs.
+func (n *Node) EnterCriticalSection() {
+	log.Printf("[L=%d] Node %s is in the critical section", n.clock.GetTime(), n.id)
+	time.Sleep(2 * time.Second) // emulate CS work
+	log.Printf("[L=%d] Node %s is leaving the critical section", n.clock.GetTime(), n.id)
+
+	n.mu.Lock()
+	n.requestCS = false
+	// Unblock any pending RequestAccess RPCs by closing their channels
+	for pid, ch := range n.pending {
+		// close only once
+		select {
+		case <-ch:
+			// already closed
+		default:
+			close(ch)
 		}
+		delete(n.pending, pid)
+		log.Printf("[L=%d] Node %s unblocked deferred request from %s", n.clock.GetTime(), n.id, pid)
 	}
 	n.delayedReplies = make([]string, 0)
 	n.mu.Unlock()
 }
 
+// RequestAccess handler: use Lamport timestamps and block RPC if deferring.
+// When unblocked (channel closed by EnterCriticalSection) the RPC returns (reply).
 func (s *server) RequestAccess(ctx context.Context, req *proto.RequestMessage) (*proto.RequestResponse, error) {
-	// update server clock with incoming timestamp
+	// Update local Lamport clock with received timestamp BEFORE making decision.
 	s.clock.UpdateClock(req.Timestamp)
 
 	// lookup the local node that this server represents
@@ -175,13 +211,11 @@ func (s *server) RequestAccess(ctx context.Context, req *proto.RequestMessage) (
 	}
 
 	local.mu.Lock()
-	defer local.mu.Unlock()
 
 	deferReply := false
-
-	// Ricart-Agrawala rule:
+	// Ricart-Agrawala priority:
 	// If local is requesting and local has priority (local.timestamp < req.Timestamp OR equal and local.id < req.NodeId)
-	// then defer reply. (local has priority -> do not reply)
+	// then defer reply (block the RPC).
 	if local.requestCS {
 		if local.timestamp < req.Timestamp || (local.timestamp == req.Timestamp && local.id < req.NodeId) {
 			deferReply = true
@@ -189,60 +223,34 @@ func (s *server) RequestAccess(ctx context.Context, req *proto.RequestMessage) (
 	}
 
 	if deferReply {
+		// create a channel to block this RPC until EnterCriticalSection closes it
+		ch := make(chan struct{})
+		local.pending[req.NodeId] = ch
 		local.delayedReplies = append(local.delayedReplies, req.NodeId)
-		log.Printf("Node %s deferring reply to %s (local ts=%d, req ts=%d)", local.id, req.NodeId, local.timestamp, req.Timestamp)
-	} else {
-		// reply immediately by calling ReplyAccess on the requester
-		client, ok := local.otherNodes[req.NodeId]
-		if ok {
-			go func(c proto.NodeServiceClient, requester string) {
-				s.clock.Tick()
-				_, err := c.ReplyAccess(context.Background(), &proto.ReplyMessage{
-					NodeId:        local.id,
-					AccessGranted: true,
-					Timestamp:     s.clock.GetTime(),
-				})
-				if err != nil {
-					log.Printf("Error sending immediate reply to %s: %v", requester, err)
-				} else {
-					log.Printf("Node %s replied immediately to %s", local.id, requester)
-				}
-			}(client, req.NodeId)
-		} else {
-			log.Printf("Node %s has no client to %s to send immediate reply", local.id, req.NodeId)
-		}
+		log.Printf("[L=%d] Node %s deferring reply to %s (local ts=%d, req ts=%d)", s.clock.GetTime(), local.id, req.NodeId, local.timestamp, req.Timestamp)
+		local.mu.Unlock()
+
+		// block until unblocked by EnterCriticalSection (which closes ch)
+		<-ch
+
+		// when unblocked, record reply event in lamport clock
+		local.clock.Tick()
+		return &proto.RequestResponse{NodeId: local.id, AccessGranted: true}, nil
 	}
 
+	// reply immediately: mark reply event on local clock and return.
+	local.clock.Tick()
+	log.Printf("[L=%d] Node %s replying immediately to %s", s.clock.GetTime(), local.id, req.NodeId)
+	local.mu.Unlock()
 	return &proto.RequestResponse{NodeId: local.id, AccessGranted: true}, nil
 }
 
+// The ReplyAccess RPC is unused in this implementation (kept for compatibility).
 func (s *server) ReplyAccess(ctx context.Context, reply *proto.ReplyMessage) (*proto.ReplyResponse, error) {
 	// update clock with reply timestamp
 	s.clock.UpdateClock(reply.Timestamp)
-
-	// local node is the one receiving this reply
-	globalNodesMutex.Lock()
-	local := globalNodes[s.id]
-	globalNodesMutex.Unlock()
-
-	if local == nil {
-		return &proto.ReplyResponse{NodeId: reply.NodeId}, nil
-	}
-
-	local.mu.Lock()
-	local.replyCount++
-	needed := len(local.otherNodes)
-	log.Printf("Node %s received reply from %s (count %d/%d)", local.id, reply.NodeId, local.replyCount, needed)
-	if local.replyCount >= needed && needed > 0 {
-		// signal requester that all replies are received (non-blocking)
-		select {
-		case local.replyChannel <- true:
-		default:
-		}
-	}
-	local.mu.Unlock()
-
-	return &proto.ReplyResponse{NodeId: local.id}, nil
+	// nothing else needed in this implementation
+	return &proto.ReplyResponse{NodeId: reply.NodeId}, nil
 }
 
 func connectAllNodes() {
@@ -279,6 +287,9 @@ func startRequestToCriticalSection() {
 }
 
 func main() {
+	// Disable default date/time prefix in the std logger so we log Lamport timestamps instead.
+	log.SetFlags(0)
+
 	// Start node A on port 5000
 	go startNodeServer("A", ":5000")
 	time.Sleep(1 * time.Second)
@@ -314,7 +325,7 @@ func startNodeServer(nodeID string, port string) {
 	globalNodes[nodeID] = node
 	globalNodesMutex.Unlock()
 
-	log.Printf("Started server for node %s on %s", nodeID, port)
+	log.Printf("[L=%d] Started server for node %s on %s", server.clock.GetTime(), nodeID, port)
 	err = grpcServer.Serve(listener)
 	if err != nil {
 		log.Fatalf("Server error: %v", err)
