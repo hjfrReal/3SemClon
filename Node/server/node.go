@@ -252,7 +252,7 @@ func startRequestToCriticalSection() {
 	globalNodesMutex.Lock()
 	defer globalNodesMutex.Unlock()
 
-	delays := map[string]int{"A": 5, "B": 10, "C": 15}
+	delays := map[string]int{"A": 2, "B": 1, "C": 5}
 
 	for id, node := range globalNodes {
 		delay := delays[id]
@@ -274,11 +274,11 @@ func main() {
 	log.SetFlags(0)
 
 	go startNodeServer("A", ":5000")
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 	go startNodeServer("B", ":5001")
 	time.Sleep(1 * time.Second)
 	go startNodeServer("C", ":5002")
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	connectAllNodes()
 
