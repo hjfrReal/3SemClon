@@ -117,7 +117,8 @@ func (n *Node) RequestCriticalSection(clock *LamportClock) {
 	for peerId, client := range n.otherNodes {
 		go func(pid string, c proto.NodeServiceClient) {
 			clock.Tick()
-			_, err := c.RequestAccess(context.Background(), req)
+			ctx := context.TODO() // never canceled context
+			_, err := c.RequestAccess(ctx, req)
 			if err != nil {
 				log.Printf("Error requesting access from peer: %v", err)
 			}
@@ -140,7 +141,8 @@ func (n *Node) EnterCriticalSection() {
 		if ok {
 			go func(c proto.NodeServiceClient, nodeId string) {
 				n.clock.Tick()
-				_, err := c.ReplyAccess(context.Background(), &proto.ReplyMessage{
+				ctx := context.TODO()
+				_, err := c.ReplyAccess(ctx, &proto.ReplyMessage{
 					NodeId:        n.id,
 					AccessGranted: true,
 					Timestamp:     n.clock.GetTime(),
