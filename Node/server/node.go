@@ -152,7 +152,7 @@ func (n *Node) RequestCriticalSection(clock *LamportClock) {
 
 	n.mu.Lock()
 	if n.replyCount >= needed {
-		log.Printf("[L=%d] Node %s entering critical section (got %d/%d replies) at lamport %d", n.clock.GetTime(), n.id, n.replyCount, needed, n.timestamp)
+		log.Printf("[L=%d] Node %s entering critical section (got %d/%d replies)", n.clock.GetTime(), n.id, n.replyCount, needed)
 		n.mu.Unlock()
 		n.EnterCriticalSection()
 		return
