@@ -23,10 +23,20 @@ type server struct {
 }
 
 type Node struct {
-	id           string
-	timestamp    int64
-	otherNodes   []proto.NodeServiceClient
-	replyChannel chan string
+	id             string
+	timestamp      int64
+	otherNodes     []proto.NodeServiceClient
+	replyChannel   chan string
+	requestCS      bool
+	replyCount     int
+	delayedReplies []string
+	mu             sync.Mutex
+}
+
+var nodeAddresses = map[string]string{
+	"A": "localhost:5000",
+	"B": "localhost:5001",
+	"C": "localhost:5002",
 }
 
 func (lc *LamportClock) Tick() {
@@ -51,11 +61,38 @@ func (lc *LamportClock) GetTime() int64 {
 
 func NewNode(id string) *Node {
 	return &Node{
-		id:           id,
-		timestamp:    time.Now().Unix(),
-		otherNodes:   make([]proto.NodeServiceClient, 0),
-		replyChannel: make(chan string),
+		id:             id,
+		timestamp:      time.Now().Unix(),
+		otherNodes:     make([]proto.NodeServiceClient, 0),
+		replyChannel:   make(chan string),
+		requestCS:      false,
+		replyCount:     0,
+		delayedReplies: make([]string, 0),
+		mu:             sync.Mutex{},
 	}
+}
+
+func (n *Node) ConnectToPeers() error {
+	for id, address := range nodeAddresses {
+		if id == n.id {
+			continue
+		}
+		conn, err := grpc.Dial(address, grpc.WithInsecure())
+		if err != nil {
+			return err
+		}
+		n.otherNodes = append(n.otherNodes, proto.NewNodeServiceClient(conn))
+	}
+	return nil
+}
+
+func (n *Node) RequestCriticalSection() {
+	n.mu.Lock()
+	n.requestCS = true
+	n.timestamp++
+	currentTimestamp := n.timestamp
+	n.mu.Unlock()
+	//continue working on this function. apply the algorithm here
 }
 
 func main() {
