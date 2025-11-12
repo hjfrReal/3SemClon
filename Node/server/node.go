@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
+	proto "node/grpc"
 	"sync"
-	"time"
 
-	proto "github.com/3SemClon/Node/grpc"
+	//proto "github.com/3SemClon/Node/grpc"
 	"google.golang.org/grpc"
 )
 
@@ -25,8 +26,8 @@ type server struct {
 type Node struct {
 	id             string
 	timestamp      int64
-	otherNodes     []proto.NodeServiceClient
-	replyChannel   chan string
+	otherNodes     map[string]proto.NodeServiceClient
+	replyChannel   chan bool
 	requestCS      bool
 	replyCount     int
 	delayedReplies []string
@@ -62,9 +63,9 @@ func (lc *LamportClock) GetTime() int64 {
 func NewNode(id string) *Node {
 	return &Node{
 		id:             id,
-		timestamp:      time.Now().Unix(),
-		otherNodes:     make([]proto.NodeServiceClient, 0),
-		replyChannel:   make(chan string),
+		timestamp:      clock.GetTime(),
+		otherNodes:     make(map[string]proto.NodeServiceClient),
+		replyChannel:   make(chan bool),
 		requestCS:      false,
 		replyCount:     0,
 		delayedReplies: make([]string, 0),
@@ -81,18 +82,83 @@ func (n *Node) ConnectToPeers() error {
 		if err != nil {
 			return err
 		}
-		n.otherNodes = append(n.otherNodes, proto.NewNodeServiceClient(conn))
+		n.otherNodes[id] = proto.NewNodeServiceClient(conn)
 	}
 	return nil
 }
 
-func (n *Node) RequestCriticalSection() {
+func (n *Node) RequestCriticalSection(clock *LamportClock) {
 	n.mu.Lock()
 	n.requestCS = true
-	n.timestamp++
-	currentTimestamp := n.timestamp
+	n.replyCount = 0
+	n.timestamp = clock.GetTime()
 	n.mu.Unlock()
-	//continue working on this function. apply the algorithm here
+
+	req := &proto.RequestMessage{
+		NodeId:    n.id,
+		Timestamp: n.timestamp,
+	}
+	for peerId, client := range n.otherNodes {
+		go func(pid string, c proto.NodeServiceClient) {
+			_, err := c.RequestAccess(context.Background(), req)
+			if err != nil {
+				log.Printf("Error requesting access from peer: %v", err)
+			}
+		}(peerId, client)
+	}
+	<-n.replyChannel
+	log.Printf("Node %s entering critical section", n.id)
+}
+
+func (s *server) RequestAccess(ctx context.Context, req *proto.RequestMessage) (*proto.RequestResponse, error) {
+	s.clock.UpdateClock(req.Timestamp)
+
+	node := s.node[req.NodeId]
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	deferReply := false
+
+	if node.requestCS {
+		if req.Timestamp < node.timestamp {
+			deferReply = true
+		} else if req.Timestamp == node.timestamp && req.NodeId < node.id {
+			deferReply = true
+		}
+	}
+	if deferReply {
+		node.delayedReplies = append(node.delayedReplies, req.NodeId)
+	} else {
+		client, ok := node.otherNodes[req.NodeId]
+		if ok {
+			go func(c proto.NodeServiceClient) {
+				_, err := c.ReplyAccess(ctx, &proto.ReplyMessage{
+					NodeId:        node.id,
+					AccessGranted: true,
+				})
+				if err != nil {
+					log.Printf("Error sending reply to node %s: %v", req.NodeId, err)
+				} else {
+					log.Printf("Replied to node %s immediately", req.NodeId)
+				}
+			}(client)
+		}
+	}
+	return &proto.RequestResponse{NodeId: node.id, AccessGranted: true}, nil
+}
+
+func (s *server) ReplyAccess(ctx context.Context, reply *proto.ReplyMessage) (*proto.RequestResponse, error) {
+	s.clock.UpdateClock(s.clock.GetTime())
+	node := s.node[reply.NodeId]
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	node.replyCount++
+	if node.replyCount == len(node.otherNodes) {
+		node.replyChannel <- true
+	}
+
+	return &proto.RequestResponse{NodeId: node.id}, nil
 }
 
 func main() {

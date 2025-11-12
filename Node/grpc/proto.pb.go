@@ -128,6 +128,7 @@ func (x *ReplyMessage) GetAccessGranted() bool {
 type RequestResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	AccessGranted bool                   `protobuf:"varint,2,opt,name=access_granted,json=accessGranted,proto3" json:"access_granted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -167,6 +168,13 @@ func (x *RequestResponse) GetNodeId() string {
 		return x.NodeId
 	}
 	return ""
+}
+
+func (x *RequestResponse) GetAccessGranted() bool {
+	if x != nil {
+		return x.AccessGranted
+	}
+	return false
 }
 
 type ReplyResponse struct {
@@ -231,9 +239,10 @@ const file_grpc_proto_proto_rawDesc = "" +
 	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\"N\n" +
 	"\fReplyMessage\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12%\n" +
-	"\x0eaccess_granted\x18\x02 \x01(\bR\raccessGranted\"*\n" +
+	"\x0eaccess_granted\x18\x02 \x01(\bR\raccessGranted\"Q\n" +
 	"\x0fRequestResponse\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"O\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12%\n" +
+	"\x0eaccess_granted\x18\x02 \x01(\bR\raccessGranted\"O\n" +
 	"\rReplyResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12%\n" +
 	"\x0eaccess_granted\x18\x02 \x01(\bR\raccessGranted2\x83\x01\n" +

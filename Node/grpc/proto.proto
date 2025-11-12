@@ -18,6 +18,7 @@ message ReplyMessage {
 }
 message RequestResponse {
     string node_id = 1;
+    bool access_granted = 2;
 }
 message ReplyResponse {
     string node_id = 1;
