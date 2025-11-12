@@ -4,10 +4,11 @@ import (
 	"context"
 	"log"
 	"net"
-	proto "node/grpc"
 	"sync"
+	"time"
 
-	//proto "github.com/3SemClon/Node/grpc"
+	proto "node/grpc"
+
 	"google.golang.org/grpc"
 )
 
@@ -25,6 +26,7 @@ type server struct {
 
 type Node struct {
 	id             string
+	clock          *LamportClock
 	timestamp      int64
 	otherNodes     map[string]proto.NodeServiceClient
 	replyChannel   chan bool
@@ -39,6 +41,9 @@ var nodeAddresses = map[string]string{
 	"B": "localhost:5001",
 	"C": "localhost:5002",
 }
+
+var globalNodes = make(map[string]*Node)
+var globalNodesMutex = sync.Mutex{}
 
 func (lc *LamportClock) Tick() {
 	lc.mu.Lock()
@@ -60,9 +65,10 @@ func (lc *LamportClock) GetTime() int64 {
 	return lc.Timestamp
 }
 
-func NewNode(id string) *Node {
+func NewNode(id string, clock *LamportClock) *Node {
 	return &Node{
 		id:             id,
+		clock:          clock,
 		timestamp:      clock.GetTime(),
 		otherNodes:     make(map[string]proto.NodeServiceClient),
 		replyChannel:   make(chan bool),
@@ -78,7 +84,15 @@ func (n *Node) ConnectToPeers() error {
 		if id == n.id {
 			continue
 		}
-		conn, err := grpc.Dial(address, grpc.WithInsecure())
+		var conn *grpc.ClientConn
+		var err error
+		for retries := 0; retries < 5; retries++ { // retry 5 times
+			conn, err = grpc.Dial(address, grpc.WithInsecure())
+			if err == nil {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
 		if err != nil {
 			return err
 		}
@@ -89,8 +103,10 @@ func (n *Node) ConnectToPeers() error {
 
 func (n *Node) RequestCriticalSection(clock *LamportClock) {
 	n.mu.Lock()
+	log.Printf("Node %s is requesting access to critical section", n.id)
 	n.requestCS = true
 	n.replyCount = 0
+	clock.Tick()
 	n.timestamp = clock.GetTime()
 	n.mu.Unlock()
 
@@ -100,6 +116,7 @@ func (n *Node) RequestCriticalSection(clock *LamportClock) {
 	}
 	for peerId, client := range n.otherNodes {
 		go func(pid string, c proto.NodeServiceClient) {
+			clock.Tick()
 			_, err := c.RequestAccess(context.Background(), req)
 			if err != nil {
 				log.Printf("Error requesting access from peer: %v", err)
@@ -108,12 +125,49 @@ func (n *Node) RequestCriticalSection(clock *LamportClock) {
 	}
 	<-n.replyChannel
 	log.Printf("Node %s entering critical section", n.id)
+	n.EnterCriticalSection()
+}
+
+func (n *Node) EnterCriticalSection() {
+	log.Printf("Node %s is in the critical section", n.id)
+	time.Sleep(2 * time.Second)
+	log.Printf("Node %s is leaving the critical section", n.id)
+	n.mu.Lock()
+	n.requestCS = false
+
+	for _, deferredNodeId := range n.delayedReplies {
+		client, ok := n.otherNodes[deferredNodeId]
+		if ok {
+			go func(c proto.NodeServiceClient, nodeId string) {
+				n.clock.Tick()
+				_, err := c.ReplyAccess(context.Background(), &proto.ReplyMessage{
+					NodeId:        n.id,
+					AccessGranted: true,
+					Timestamp:     n.clock.GetTime(),
+				})
+				if err != nil {
+					log.Printf("Error sending deferred reply to node %s: %v", nodeId, err)
+				} else {
+					log.Printf("Sent deferred reply to node %s", nodeId)
+				}
+			}(client, deferredNodeId)
+		}
+	}
+	n.delayedReplies = make([]string, 0)
+	n.mu.Unlock()
 }
 
 func (s *server) RequestAccess(ctx context.Context, req *proto.RequestMessage) (*proto.RequestResponse, error) {
 	s.clock.UpdateClock(req.Timestamp)
 
-	node := s.node[req.NodeId]
+	globalNodesMutex.Lock()
+	node := globalNodes[req.NodeId]
+	globalNodesMutex.Unlock()
+
+	if node == nil {
+		return &proto.RequestResponse{NodeId: req.NodeId, AccessGranted: false}, nil
+	}
+
 	node.mu.Lock()
 	defer node.mu.Unlock()
 
@@ -132,9 +186,11 @@ func (s *server) RequestAccess(ctx context.Context, req *proto.RequestMessage) (
 		client, ok := node.otherNodes[req.NodeId]
 		if ok {
 			go func(c proto.NodeServiceClient) {
+				s.clock.Tick()
 				_, err := c.ReplyAccess(ctx, &proto.ReplyMessage{
 					NodeId:        node.id,
 					AccessGranted: true,
+					Timestamp:     s.clock.GetTime(),
 				})
 				if err != nil {
 					log.Printf("Error sending reply to node %s: %v", req.NodeId, err)
@@ -147,9 +203,17 @@ func (s *server) RequestAccess(ctx context.Context, req *proto.RequestMessage) (
 	return &proto.RequestResponse{NodeId: node.id, AccessGranted: true}, nil
 }
 
-func (s *server) ReplyAccess(ctx context.Context, reply *proto.ReplyMessage) (*proto.RequestResponse, error) {
-	s.clock.UpdateClock(s.clock.GetTime())
-	node := s.node[reply.NodeId]
+func (s *server) ReplyAccess(ctx context.Context, reply *proto.ReplyMessage) (*proto.ReplyResponse, error) {
+	s.clock.UpdateClock(reply.Timestamp)
+
+	globalNodesMutex.Lock()
+	node := globalNodes[reply.NodeId]
+	globalNodesMutex.Unlock()
+
+	if node == nil {
+		return &proto.ReplyResponse{NodeId: reply.NodeId}, nil
+	}
+
 	node.mu.Lock()
 	defer node.mu.Unlock()
 
@@ -158,26 +222,80 @@ func (s *server) ReplyAccess(ctx context.Context, reply *proto.ReplyMessage) (*p
 		node.replyChannel <- true
 	}
 
-	return &proto.RequestResponse{NodeId: node.id}, nil
+	return &proto.ReplyResponse{NodeId: node.id}, nil
+}
+
+func connectAllNodes() {
+	globalNodesMutex.Lock()
+	defer globalNodesMutex.Unlock()
+
+	for _, node := range globalNodes {
+		for peerID, addr := range nodeAddresses {
+			if peerID == node.id {
+				continue
+			}
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("Node %s failed to connect to %s: %v", node.id, peerID, err)
+			}
+			node.otherNodes[peerID] = proto.NewNodeServiceClient(conn)
+		}
+	}
+}
+
+func startRequestToCriticalSection() {
+	globalNodesMutex.Lock()
+	defer globalNodesMutex.Unlock()
+
+	delays := map[string]int{"A": 5, "B": 10, "C": 15}
+
+	for id, node := range globalNodes {
+		delay := delays[id]
+		go func(n *Node, d int) {
+			time.Sleep(time.Duration(d) * time.Second)
+			n.RequestCriticalSection(n.clock)
+		}(node, delay)
+	}
 }
 
 func main() {
+	// Start node A on port 5000
+	go startNodeServer("A", ":5000")
+	time.Sleep(1 * time.Second)
+	// Start node B on port 5001
+	go startNodeServer("B", ":5001")
+	time.Sleep(1 * time.Second)
+	// Start node C on port 5002
+	go startNodeServer("C", ":5002")
+	time.Sleep(2 * time.Second)
+
+	connectAllNodes()
+
+	startRequestToCriticalSection()
+
+	// Keep main alive
+	select {}
+}
+
+func startNodeServer(nodeID string, port string) {
 	server := &server{node: make(map[string]*Node), clock: &LamportClock{Timestamp: 0}}
 
-	server.start_server()
-}
-func (s *server) start_server() {
 	grpcServer := grpc.NewServer()
-	listener, err := net.Listen("tcp", ":5050")
+	listener, err := net.Listen("tcp", port)
 	if err != nil {
-		log.Fatalf("Did not work")
+		log.Fatalf("Failed to listen on %s: %v", port, err)
 	}
 
-	proto.RegisterNodeServiceServer(grpcServer, s)
+	proto.RegisterNodeServiceServer(grpcServer, server)
+
+	node := NewNode(nodeID, server.clock)
+
+	globalNodesMutex.Lock()
+	globalNodes[nodeID] = node
+	globalNodesMutex.Unlock()
 
 	err = grpcServer.Serve(listener)
-
 	if err != nil {
-		log.Fatalf("Did not work")
+		log.Fatalf("Server error: %v", err)
 	}
 }

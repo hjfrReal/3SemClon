@@ -77,6 +77,7 @@ type ReplyMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	AccessGranted bool                   `protobuf:"varint,2,opt,name=access_granted,json=accessGranted,proto3" json:"access_granted,omitempty"`
+	Timestamp     int64                  `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -123,6 +124,13 @@ func (x *ReplyMessage) GetAccessGranted() bool {
 		return x.AccessGranted
 	}
 	return false
+}
+
+func (x *ReplyMessage) GetTimestamp() int64 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
 }
 
 type RequestResponse struct {
@@ -236,10 +244,11 @@ const file_grpc_proto_proto_rawDesc = "" +
 	"\x10grpc/proto.proto\x12\x04Node\"G\n" +
 	"\x0eRequestMessage\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\"N\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\"l\n" +
 	"\fReplyMessage\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12%\n" +
-	"\x0eaccess_granted\x18\x02 \x01(\bR\raccessGranted\"Q\n" +
+	"\x0eaccess_granted\x18\x02 \x01(\bR\raccessGranted\x12\x1c\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"Q\n" +
 	"\x0fRequestResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12%\n" +
 	"\x0eaccess_granted\x18\x02 \x01(\bR\raccessGranted\"O\n" +
