@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"sync"
 
 	proto "github.com/3SemClon/chitchat/grpc"
@@ -50,6 +51,23 @@ func (lc *LamportClock) GetTime() int64 {
 	return lc.Timestamp
 }
 
+func (s *server) logEvent(eventType, userID, details string) {
+	ts := s.clock.GetTime()
+	logLine := fmt.Sprintf("[%d] [Server] [%s] UserID=%s %s\n", ts, eventType, userID, details)
+
+	// Append to chat.log
+	f, err := os.OpenFile("chat.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("Failed to write log: %v", err)
+		return
+	}
+	defer f.Close()
+	f.WriteString(logLine)
+
+	// Also print to console
+	fmt.Print(logLine)
+}
+
 func (s *server) JoinChat(ctx context.Context, req *proto.JoinRequest) (*proto.JoinResponse, error) {
 	s.clock.Tick()
 	userID := uuid.New().String()
@@ -58,6 +76,7 @@ func (s *server) JoinChat(ctx context.Context, req *proto.JoinRequest) (*proto.J
 		id:   userID,
 		name: req.Name,
 	}
+	s.logEvent("JOIN", userID, fmt.Sprintf("%s joined the chat", req.Name))
 
 	s.users[userID] = newUser
 	for _, user := range s.users {
@@ -91,6 +110,7 @@ func (s *server) LeaveChat(ctx context.Context, req *proto.LeaveRequest) (*proto
 	}
 
 	delete(s.users, userID)
+	s.logEvent("LEAVE", userID, fmt.Sprintf("%s left the chat", user.name))
 	return &proto.LeaveResponse{Success: true}, nil
 }
 
@@ -118,6 +138,7 @@ func (s *server) Chat(stream proto.ChitChatService_ChatServer) error {
 			}
 		}
 		delete(s.users, userID)
+		s.logEvent("LEAVE", userID, fmt.Sprintf("%s disconnected", user.name))
 	}()
 
 	for {
@@ -125,9 +146,14 @@ func (s *server) Chat(stream proto.ChitChatService_ChatServer) error {
 		if err != nil {
 			return err
 		}
+		s.clock.UpdateClock(msg.Timestamp)
+		s.logEvent("RECEIVE_MESSAGE", userID, fmt.Sprintf("Message: %q", msg.MessageContent))
+
 		for _, user := range s.users {
 			if user.id != userID && user.stream != nil {
 				user.stream.Send(msg)
+				s.logEvent("SEND_MESSAGE", user.id, fmt.Sprintf("Sent to %s: %q", user.name, msg.MessageContent))
+
 			}
 		}
 	}
@@ -145,6 +171,7 @@ func main() {
 	server := &server{users: make(map[string]*user), clock: &LamportClock{Timestamp: 0}}
 
 	server.start_server()
+
 }
 
 func (s *server) start_server() {
@@ -161,4 +188,6 @@ func (s *server) start_server() {
 	if err != nil {
 		log.Fatalf("Did not work")
 	}
+	s.logEvent("START", "N/A", "Server started on port 5050")
+
 }

@@ -40,6 +40,10 @@ func (lc *LamportClock) GetTime() int64 {
 	return lc.Timestamp
 }
 
+func logToChatFile(logFile *os.File, line string) {
+	logFile.WriteString(line + "\n")
+}
+
 func main() {
 	// Connect to server
 	conn, err := grpc.Dial("localhost:5050", grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -48,6 +52,13 @@ func main() {
 	}
 	defer conn.Close()
 	client := proto.NewChitChatServiceClient(conn)
+
+	// Open log file
+	logFile, err := os.OpenFile("chat.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("Failed to open log file: %v", err)
+	}
+	defer logFile.Close()
 
 	// Prompt for username
 	fmt.Print("Enter your name: ")
@@ -63,20 +74,15 @@ func main() {
 	}
 	userID := joinResp.Id
 	fmt.Printf("Joined as %s (ID: %s)\n", name, userID)
+	logToChatFile(logFile, fmt.Sprintf("[%d] [Client] [JOIN] UserID=%s %s joined the chat", lc.GetTime(), userID, name))
 
 	defer func() {
 		lc.Tick()
 		if _, err := client.LeaveChat(context.Background(), &proto.LeaveRequest{Id: userID}); err != nil {
 			log.Printf("LeaveChat failed: %v", err)
 		}
+		logToChatFile(logFile, fmt.Sprintf("[%d] [Client] [LEAVE] UserID=%s %s left the chat", lc.GetTime(), userID, name))
 	}()
-
-	// Open log file
-	logFile, err := os.OpenFile("chat.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
-	}
-	defer logFile.Close()
 
 	// Start chat stream
 	stream, err := client.Chat(context.Background())
@@ -99,9 +105,11 @@ func main() {
 				return
 			}
 			lc.UpdateClock(msg.Timestamp)
-			display := fmt.Sprintf("[%d] %s: %s", lc.GetTime(), msg.SenderName, msg.MessageContent)
-			fmt.Println(display)
-			logFile.WriteString(display + "\n")
+			logLine := fmt.Sprintf("[%d] [Client] [RECEIVE_MESSAGE] UserID=%s Message: %q", lc.GetTime(), msg.SenderId, msg.MessageContent)
+			logFile.WriteString(logLine + "\n")
+
+			// Display to user
+			fmt.Printf("[%d] %s: %s\n", lc.GetTime(), msg.SenderName, msg.MessageContent)
 		}
 	}()
 
