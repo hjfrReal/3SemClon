@@ -1,0 +1,24 @@
+syntax = "proto3";
+package Exercise5;
+option go_package = "github.com/3SemClon/Exercise5/grpc;proto";
+
+service Exercise5Service {
+    rpc RequestAccess(RequestMessage) returns (RequestResponse);
+    rpc ReplyAccess(ReplyMessage) returns (ReplyResponse);
+}
+
+message RequestMessage {
+    int32 process_id = 1;
+    int32 timestamp = 2;
+}
+message RequestResponse {
+    bool granted = 1;
+}
+message ReplyMessage {
+    int32 process_id = 1;
+    int32 timestamp = 2;
+    bool granted = 3;
+}
+message ReplyResponse {
+    bool acknowledged = 1;
+}
