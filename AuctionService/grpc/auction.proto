@@ -1,0 +1,29 @@
+syntax = "proto3";
+package AuctionService;
+option go_package = "github.com/3SemClon/AuctionService/grpc";
+
+service AuctionService {
+    rpc Bid(BidRequest) returns (BidResponse);
+    rpc GetResult(ResultRequest) returns (ResultResponse);
+}
+
+message BidRequest {
+    string bidder_id = 1;
+    double amount = 2;
+    int64 timestamp = 3;
+}
+
+message BidResponse {
+    string bidder_id = 1;
+    bool success = 2;
+    string message = 3;
+}
+
+message ResultRequest {
+    string auction_id = 1;
+}
+
+message ResultResponse {
+    string winner_id = 1;
+    double winning_bid = 2;
+}
