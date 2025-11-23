@@ -54,7 +54,8 @@ func main() {
 	client := proto.NewChitChatServiceClient(conn)
 
 	// Open log file
-	logFile, err := os.OpenFile("chat.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logpath := "chat.log"
+	logFile, err := os.OpenFile(logpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
 	}

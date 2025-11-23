@@ -55,17 +55,16 @@ func (s *server) logEvent(eventType, userID, details string) {
 	ts := s.clock.GetTime()
 	logLine := fmt.Sprintf("[%d] [Server] [%s] UserID=%s %s\n", ts, eventType, userID, details)
 
-	// Append to chat.log
-	f, err := os.OpenFile("chat.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logpath := "../client/chat.log"
+
+	f, err := os.OpenFile(logpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Printf("Failed to write log: %v", err)
 		return
 	}
 	defer f.Close()
 	f.WriteString(logLine)
-
-	// Also print to console
-	fmt.Print(logLine)
+	fmt.Print(logLine) // optional: still print to terminal
 }
 
 func (s *server) JoinChat(ctx context.Context, req *proto.JoinRequest) (*proto.JoinResponse, error) {
@@ -168,6 +167,7 @@ func GetActiveUsers(s *server) []string {
 }
 
 func main() {
+
 	server := &server{users: make(map[string]*user), clock: &LamportClock{Timestamp: 0}}
 
 	server.start_server()
@@ -175,6 +175,9 @@ func main() {
 }
 
 func (s *server) start_server() {
+	s.clock.Tick()
+	s.logEvent("START", "SERVER", "Server starting on port 5050")
+
 	grpcServer := grpc.NewServer()
 	listener, err := net.Listen("tcp", ":5050")
 	if err != nil {
@@ -188,6 +191,7 @@ func (s *server) start_server() {
 	if err != nil {
 		log.Fatalf("Did not work")
 	}
-	s.logEvent("START", "N/A", "Server started on port 5050")
+	s.clock.Tick()
+	s.logEvent("STOP", "SERVER", "Server stopped")
 
 }
