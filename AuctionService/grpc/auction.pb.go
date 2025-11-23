@@ -188,7 +188,7 @@ func (x *ResultRequest) GetAuctionId() string {
 type ResultResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WinnerId      string                 `protobuf:"bytes,1,opt,name=winner_id,json=winnerId,proto3" json:"winner_id,omitempty"`
-	WinningBid    float64                `protobuf:"fixed64,2,opt,name=winning_bid,json=winningBid,proto3" json:"winning_bid,omitempty"`
+	WinningBid    int32                  `protobuf:"varint,2,opt,name=winning_bid,json=winningBid,proto3" json:"winning_bid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -230,11 +230,115 @@ func (x *ResultResponse) GetWinnerId() string {
 	return ""
 }
 
-func (x *ResultResponse) GetWinningBid() float64 {
+func (x *ResultResponse) GetWinningBid() int32 {
 	if x != nil {
 		return x.WinningBid
 	}
 	return 0
+}
+
+type UpdateStateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	HighestBid    int32                  `protobuf:"varint,1,opt,name=highest_bid,json=highestBid,proto3" json:"highest_bid,omitempty"`
+	HighestBidder string                 `protobuf:"bytes,2,opt,name=highest_bidder,json=highestBidder,proto3" json:"highest_bidder,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateStateRequest) Reset() {
+	*x = UpdateStateRequest{}
+	mi := &file_auction_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateStateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateStateRequest) ProtoMessage() {}
+
+func (x *UpdateStateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auction_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateStateRequest.ProtoReflect.Descriptor instead.
+func (*UpdateStateRequest) Descriptor() ([]byte, []int) {
+	return file_auction_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UpdateStateRequest) GetHighestBid() int32 {
+	if x != nil {
+		return x.HighestBid
+	}
+	return 0
+}
+
+func (x *UpdateStateRequest) GetHighestBidder() string {
+	if x != nil {
+		return x.HighestBidder
+	}
+	return ""
+}
+
+type UpdateStateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateStateResponse) Reset() {
+	*x = UpdateStateResponse{}
+	mi := &file_auction_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateStateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateStateResponse) ProtoMessage() {}
+
+func (x *UpdateStateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_auction_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateStateResponse.ProtoReflect.Descriptor instead.
+func (*UpdateStateResponse) Descriptor() ([]byte, []int) {
+	return file_auction_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *UpdateStateResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *UpdateStateResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
 }
 
 var File_auction_proto protoreflect.FileDescriptor
@@ -256,11 +360,19 @@ const file_auction_proto_rawDesc = "" +
 	"auction_id\x18\x01 \x01(\tR\tauctionId\"N\n" +
 	"\x0eResultResponse\x12\x1b\n" +
 	"\twinner_id\x18\x01 \x01(\tR\bwinnerId\x12\x1f\n" +
-	"\vwinning_bid\x18\x02 \x01(\x01R\n" +
-	"winningBid2\x9c\x01\n" +
+	"\vwinning_bid\x18\x02 \x01(\x05R\n" +
+	"winningBid\"\\\n" +
+	"\x12UpdateStateRequest\x12\x1f\n" +
+	"\vhighest_bid\x18\x01 \x01(\x05R\n" +
+	"highestBid\x12%\n" +
+	"\x0ehighest_bidder\x18\x02 \x01(\tR\rhighestBidder\"I\n" +
+	"\x13UpdateStateResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xf4\x01\n" +
 	"\x0eAuctionService\x12>\n" +
 	"\x03Bid\x12\x1a.AuctionService.BidRequest\x1a\x1b.AuctionService.BidResponse\x12J\n" +
-	"\tGetResult\x12\x1d.AuctionService.ResultRequest\x1a\x1e.AuctionService.ResultResponseB)Z'github.com/3SemClon/AuctionService/grpcb\x06proto3"
+	"\tGetResult\x12\x1d.AuctionService.ResultRequest\x1a\x1e.AuctionService.ResultResponse\x12V\n" +
+	"\vUpdateState\x12\".AuctionService.UpdateStateRequest\x1a#.AuctionService.UpdateStateResponseB)Z'github.com/3SemClon/AuctionService/grpcb\x06proto3"
 
 var (
 	file_auction_proto_rawDescOnce sync.Once
@@ -274,20 +386,24 @@ func file_auction_proto_rawDescGZIP() []byte {
 	return file_auction_proto_rawDescData
 }
 
-var file_auction_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_auction_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_auction_proto_goTypes = []any{
-	(*BidRequest)(nil),     // 0: AuctionService.BidRequest
-	(*BidResponse)(nil),    // 1: AuctionService.BidResponse
-	(*ResultRequest)(nil),  // 2: AuctionService.ResultRequest
-	(*ResultResponse)(nil), // 3: AuctionService.ResultResponse
+	(*BidRequest)(nil),          // 0: AuctionService.BidRequest
+	(*BidResponse)(nil),         // 1: AuctionService.BidResponse
+	(*ResultRequest)(nil),       // 2: AuctionService.ResultRequest
+	(*ResultResponse)(nil),      // 3: AuctionService.ResultResponse
+	(*UpdateStateRequest)(nil),  // 4: AuctionService.UpdateStateRequest
+	(*UpdateStateResponse)(nil), // 5: AuctionService.UpdateStateResponse
 }
 var file_auction_proto_depIdxs = []int32{
 	0, // 0: AuctionService.AuctionService.Bid:input_type -> AuctionService.BidRequest
 	2, // 1: AuctionService.AuctionService.GetResult:input_type -> AuctionService.ResultRequest
-	1, // 2: AuctionService.AuctionService.Bid:output_type -> AuctionService.BidResponse
-	3, // 3: AuctionService.AuctionService.GetResult:output_type -> AuctionService.ResultResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	4, // 2: AuctionService.AuctionService.UpdateState:input_type -> AuctionService.UpdateStateRequest
+	1, // 3: AuctionService.AuctionService.Bid:output_type -> AuctionService.BidResponse
+	3, // 4: AuctionService.AuctionService.GetResult:output_type -> AuctionService.ResultResponse
+	5, // 5: AuctionService.AuctionService.UpdateState:output_type -> AuctionService.UpdateStateResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -304,7 +420,7 @@ func file_auction_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auction_proto_rawDesc), len(file_auction_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

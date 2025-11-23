@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuctionService_Bid_FullMethodName       = "/AuctionService.AuctionService/Bid"
-	AuctionService_GetResult_FullMethodName = "/AuctionService.AuctionService/GetResult"
+	AuctionService_Bid_FullMethodName         = "/AuctionService.AuctionService/Bid"
+	AuctionService_GetResult_FullMethodName   = "/AuctionService.AuctionService/GetResult"
+	AuctionService_UpdateState_FullMethodName = "/AuctionService.AuctionService/UpdateState"
 )
 
 // AuctionServiceClient is the client API for AuctionService service.
@@ -29,6 +30,7 @@ const (
 type AuctionServiceClient interface {
 	Bid(ctx context.Context, in *BidRequest, opts ...grpc.CallOption) (*BidResponse, error)
 	GetResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error)
+	UpdateState(ctx context.Context, in *UpdateStateRequest, opts ...grpc.CallOption) (*UpdateStateResponse, error)
 }
 
 type auctionServiceClient struct {
@@ -59,12 +61,23 @@ func (c *auctionServiceClient) GetResult(ctx context.Context, in *ResultRequest,
 	return out, nil
 }
 
+func (c *auctionServiceClient) UpdateState(ctx context.Context, in *UpdateStateRequest, opts ...grpc.CallOption) (*UpdateStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateStateResponse)
+	err := c.cc.Invoke(ctx, AuctionService_UpdateState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuctionServiceServer is the server API for AuctionService service.
 // All implementations must embed UnimplementedAuctionServiceServer
 // for forward compatibility.
 type AuctionServiceServer interface {
 	Bid(context.Context, *BidRequest) (*BidResponse, error)
 	GetResult(context.Context, *ResultRequest) (*ResultResponse, error)
+	UpdateState(context.Context, *UpdateStateRequest) (*UpdateStateResponse, error)
 	mustEmbedUnimplementedAuctionServiceServer()
 }
 
@@ -80,6 +93,9 @@ func (UnimplementedAuctionServiceServer) Bid(context.Context, *BidRequest) (*Bid
 }
 func (UnimplementedAuctionServiceServer) GetResult(context.Context, *ResultRequest) (*ResultResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetResult not implemented")
+}
+func (UnimplementedAuctionServiceServer) UpdateState(context.Context, *UpdateStateRequest) (*UpdateStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateState not implemented")
 }
 func (UnimplementedAuctionServiceServer) mustEmbedUnimplementedAuctionServiceServer() {}
 func (UnimplementedAuctionServiceServer) testEmbeddedByValue()                        {}
@@ -138,6 +154,24 @@ func _AuctionService_GetResult_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuctionService_UpdateState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionServiceServer).UpdateState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuctionService_UpdateState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionServiceServer).UpdateState(ctx, req.(*UpdateStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuctionService_ServiceDesc is the grpc.ServiceDesc for AuctionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -152,6 +186,10 @@ var AuctionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetResult",
 			Handler:    _AuctionService_GetResult_Handler,
+		},
+		{
+			MethodName: "UpdateState",
+			Handler:    _AuctionService_UpdateState_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -5,6 +5,7 @@ option go_package = "github.com/3SemClon/AuctionService/grpc";
 service AuctionService {
     rpc Bid(BidRequest) returns (BidResponse);
     rpc GetResult(ResultRequest) returns (ResultResponse);
+    rpc UpdateState(UpdateStateRequest) returns (UpdateStateResponse);
 }
 
 message BidRequest {
@@ -25,5 +26,14 @@ message ResultRequest {
 
 message ResultResponse {
     string winner_id = 1;
-    double winning_bid = 2;
+    int32 winning_bid = 2;
+}
+message UpdateStateRequest {
+    int32 highest_bid = 1;
+    string highest_bidder = 2;
+}
+
+message UpdateStateResponse {
+    bool success = 1;
+    string message = 2;
 }
