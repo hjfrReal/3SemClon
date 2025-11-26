@@ -5,8 +5,8 @@ Do remember that there is time on the auction and the moment you run the nodes t
     go run auctionNode.go --id=node2 --port=:5002
     go run auctionNode.go --id=node1 --port=:5001
 3. Make another terminal and navigate to AuctionService.
-after you have startet the nodes you can write here: 
+4. After you have startet the nodes you can write here: 
 go run client.go
-Now the clients will bid and you will see it in the terminal.
-While the client is running you can close a terminal with a node to see if the program still runs. (ctrl + c).
+5. Now the clients will bid and you will see it in the terminal.
+6. While the client is running you can close a terminal with a node to see if the program still runs. (ctrl + c).
 
