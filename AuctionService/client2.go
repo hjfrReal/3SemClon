@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -37,7 +36,7 @@ func (lc *LamportClock) Get() int64 {
 
 type Bidder struct {
 	Id     string
-	Node   string // host:port
+	Node   string
 	Client proto.AuctionServiceClient
 	Lc     *LamportClock
 }
@@ -86,7 +85,7 @@ func runSequence(b *Bidder, seq []int, delays []time.Duration, wg *sync.WaitGrou
 		}
 		log.Printf("[%s -> %s] Bid %d -> OK=%v msg=%s (L=%d)", b.Id, b.Node, amount, resp.Success, resp.Message, b.Lc.Get())
 
-		// Query result after each bid
+		// Get result after each bid
 		r, err := b.GetResult()
 		if err != nil {
 			log.Printf("[%s -> %s] GetResult error: %v", b.Id, b.Node, err)
@@ -97,19 +96,19 @@ func runSequence(b *Bidder, seq []int, delays []time.Duration, wg *sync.WaitGrou
 }
 
 func main() {
-	// map bidders -> node addresses
+	//  connect clients to nodes
 	assign := map[string]string{
 		"Alice":   "localhost:5001",
 		"Bob":     "localhost:5002",
 		"Charlie": "localhost:5003",
-		"Diana":   "localhost:5001", // two bidders on node1 to test multi-client behaviour
+		"Diana":   "localhost:5001",
 	}
 
-	// sequence of tests to run for each bidder
+	// Client hardcoded bids sequences and delays
 	sequences := map[string][]int{
 		"Alice":   {100, 200},
 		"Bob":     {150, 250},
-		"Charlie": {120, 300}, // first bid might be low if concurrently later; includes a high bid
+		"Charlie": {120, 300},
 		"Diana":   {220},
 	}
 	delays := map[string][]time.Duration{
@@ -136,24 +135,24 @@ func main() {
 		go runSequence(b, seq, ds, &wg)
 	}
 	wg.Wait()
-
-	// Query final result from each node (should be consistent)
-	fmt.Println("Final results from each node:")
-	for _, addr := range []string{"localhost:5001", "localhost:5002", "localhost:5003"} {
-		conn, err := grpc.Dial(addr, grpc.WithInsecure())
-		if err != nil {
-			log.Printf("Failed to connect to %s: %v", addr, err)
-			continue
-		}
-		client := proto.NewAuctionServiceClient(conn)
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		res, err := client.GetResult(ctx, &proto.ResultRequest{})
-		cancel()
-		conn.Close()
-		if err != nil {
-			log.Printf("GetResult from %s error: %v", addr, err)
-			continue
-		}
-		fmt.Printf("%s -> Winner: %s bid=%v\n", addr, res.WinnerId, res.WinningBid)
-	}
+	/*
+		// retrieve final results from all nodes
+		fmt.Println("Final results from each node:")
+		for _, addr := range []string{"localhost:5001", "localhost:5002", "localhost:5003"} {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				log.Printf("Failed to connect to %s: %v", addr, err)
+				continue
+			}
+			client := proto.NewAuctionServiceClient(conn)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			res, err := client.GetResult(ctx, &proto.ResultRequest{})
+			cancel()
+			conn.Close()
+			if err != nil {
+				log.Printf("GetResult from %s error: %v", addr, err)
+				continue
+			}
+			fmt.Printf("%s -> Winner: %s bid=%v\n", addr, res.WinnerId, res.WinningBid)
+		}*/
 }
