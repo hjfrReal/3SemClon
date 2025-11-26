@@ -113,10 +113,10 @@ func main() {
 		"Diana":   {220},
 	}
 	delays := map[string][]time.Duration{
-		"Alice":   {0 * time.Second, 1 * time.Second},
-		"Bob":     {200 * time.Millisecond, 2 * time.Second},
-		"Charlie": {500 * time.Millisecond, 3 * time.Second},
-		"Diana":   {1500 * time.Millisecond},
+		"Alice":   {0 * time.Second, 2 * time.Second},
+		"Bob":     {2000 * time.Millisecond, 4 * time.Second},
+		"Charlie": {5000 * time.Millisecond, 6 * time.Second},
+		"Diana":   {15000 * time.Millisecond},
 	}
 
 	bidders := make(map[string]*Bidder)
