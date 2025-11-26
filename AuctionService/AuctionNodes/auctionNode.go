@@ -305,7 +305,7 @@ func main() {
 	node := NewAuctionServiceNode(*nodeID, allNodes)
 
 	go func() {
-		time.Sleep(100 * time.Second)
+		time.Sleep(180 * time.Second)
 		node.mu.Lock()
 		node.state.AuctionOpen = false
 		winner := node.state.HighestBidder
