@@ -8,6 +8,7 @@ package grpc
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -22,6 +23,7 @@ const (
 	AuctionService_Bid_FullMethodName         = "/AuctionService.AuctionService/Bid"
 	AuctionService_GetResult_FullMethodName   = "/AuctionService.AuctionService/GetResult"
 	AuctionService_UpdateState_FullMethodName = "/AuctionService.AuctionService/UpdateState"
+	AuctionService_Heartbeat_FullMethodName   = "/AuctionService.AuctionService/Heartbeat"
 )
 
 // AuctionServiceClient is the client API for AuctionService service.
@@ -31,6 +33,7 @@ type AuctionServiceClient interface {
 	Bid(ctx context.Context, in *BidRequest, opts ...grpc.CallOption) (*BidResponse, error)
 	GetResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error)
 	UpdateState(ctx context.Context, in *UpdateStateRequest, opts ...grpc.CallOption) (*UpdateStateResponse, error)
+	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 }
 
 type auctionServiceClient struct {
@@ -71,6 +74,16 @@ func (c *auctionServiceClient) UpdateState(ctx context.Context, in *UpdateStateR
 	return out, nil
 }
 
+func (c *auctionServiceClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HeartbeatResponse)
+	err := c.cc.Invoke(ctx, AuctionService_Heartbeat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuctionServiceServer is the server API for AuctionService service.
 // All implementations must embed UnimplementedAuctionServiceServer
 // for forward compatibility.
@@ -78,6 +91,7 @@ type AuctionServiceServer interface {
 	Bid(context.Context, *BidRequest) (*BidResponse, error)
 	GetResult(context.Context, *ResultRequest) (*ResultResponse, error)
 	UpdateState(context.Context, *UpdateStateRequest) (*UpdateStateResponse, error)
+	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	mustEmbedUnimplementedAuctionServiceServer()
 }
 
@@ -96,6 +110,9 @@ func (UnimplementedAuctionServiceServer) GetResult(context.Context, *ResultReque
 }
 func (UnimplementedAuctionServiceServer) UpdateState(context.Context, *UpdateStateRequest) (*UpdateStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateState not implemented")
+}
+func (UnimplementedAuctionServiceServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Heartbeat not implemented")
 }
 func (UnimplementedAuctionServiceServer) mustEmbedUnimplementedAuctionServiceServer() {}
 func (UnimplementedAuctionServiceServer) testEmbeddedByValue()                        {}
@@ -172,6 +189,24 @@ func _AuctionService_UpdateState_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuctionService_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionServiceServer).Heartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuctionService_Heartbeat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionServiceServer).Heartbeat(ctx, req.(*HeartbeatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuctionService_ServiceDesc is the grpc.ServiceDesc for AuctionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +225,10 @@ var AuctionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateState",
 			Handler:    _AuctionService_UpdateState_Handler,
+		},
+		{
+			MethodName: "Heartbeat",
+			Handler:    _AuctionService_Heartbeat_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
