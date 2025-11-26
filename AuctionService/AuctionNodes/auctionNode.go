@@ -5,7 +5,6 @@ import (
 	"flag"
 	"log"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -43,16 +42,16 @@ type AuctionState struct {
 
 type AuctionServiceNode struct {
 	proto.UnimplementedAuctionServiceServer
-	state     AuctionState
-	isPrimary bool
-	nodeID    string
-	peers     map[string]proto.AuctionServiceClient
-	primaryID string
-	mu        sync.Mutex
+	state         AuctionState
+	isPrimary     bool
+	nodeID        string
+	peers         map[string]proto.AuctionServiceClient
+	primaryID     string
+	lastHeartbeat time.Time
+	mu            sync.Mutex
 }
 
-func NewAuctionServiceNode(id string, isPrimary bool, otherNodes map[string]string, primaryID string) *AuctionServiceNode {
-
+func NewAuctionServiceNode(id string, otherNodes map[string]string) *AuctionServiceNode {
 	peers := make(map[string]proto.AuctionServiceClient)
 
 	for peerID, addr := range otherNodes {
@@ -64,6 +63,13 @@ func NewAuctionServiceNode(id string, isPrimary bool, otherNodes map[string]stri
 		peers[peerID] = proto.NewAuctionServiceClient(conn)
 	}
 
+	primary := id
+	for n := range otherNodes {
+		if n > primary {
+			primary = n
+		}
+	}
+
 	return &AuctionServiceNode{
 		state: AuctionState{
 			AuctionOpen:   true,
@@ -72,80 +78,131 @@ func NewAuctionServiceNode(id string, isPrimary bool, otherNodes map[string]stri
 			HighestBidder: "",
 			BidsByClient:  make(map[string]int),
 		},
-		isPrimary: isPrimary,
-		nodeID:    id,
-		peers:     peers,
-		primaryID: primaryID,
+		isPrimary:     id == primary,
+		nodeID:        id,
+		peers:         peers,
+		primaryID:     primary,
+		lastHeartbeat: time.Now(),
 	}
 }
 
-func (node *AuctionServiceNode) Bid(ctx context.Context, req *proto.BidRequest) (*proto.BidResponse, error) {
-	// if node is not primary. forward the bid to primary
+func (node *AuctionServiceNode) Heartbeat(ctx context.Context, req *proto.HeartbeatRequest) (*proto.HeartbeatResponse, error) {
+	node.mu.Lock()
+	node.lastHeartbeat = time.Now()
+	node.primaryID = req.NodeId
+	node.mu.Unlock()
+	return &proto.HeartbeatResponse{Ok: true}, nil
+}
+
+func (node *AuctionServiceNode) startHeartbeatSender() {
 	if !node.isPrimary {
-		// If primary is unknown, return error
-		if node.primaryID == "" {
-			return &proto.BidResponse{Success: false, Message: "Primary unknown"}, nil
+		return
+	}
+
+	ticker := time.NewTicker(1 * time.Second)
+	for range ticker.C {
+		for id, peer := range node.peers {
+			ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+			_, err := peer.Heartbeat(ctx, &proto.HeartbeatRequest{NodeId: node.nodeID})
+			cancel()
+
+			if err != nil {
+				log.Printf("[PRIMARY %s] cannot reach %s: %v", node.nodeID, id, err)
+			}
 		}
-		primaryClient, ok := node.peers[node.primaryID]
+	}
+}
+
+func (node *AuctionServiceNode) monitorPrimary() {
+	if node.isPrimary {
+		return
+	}
+
+	ticker := time.NewTicker(1 * time.Second)
+	for range ticker.C {
+
+		node.mu.Lock()
+		expired := time.Since(node.lastHeartbeat) > 3*time.Second
+		node.mu.Unlock()
+
+		if expired {
+			log.Printf("[%s] Primary %s timed out → starting election",
+				node.nodeID, node.primaryID)
+			node.startElection()
+		}
+	}
+}
+
+func (node *AuctionServiceNode) startElection() {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	// simple rule: highest nodeID becomes primary
+	candidate := node.nodeID
+	for peerID := range node.peers {
+		if peerID > candidate {
+			candidate = peerID
+		}
+	}
+
+	if candidate != node.nodeID {
+		// other node should be primary
+		node.primaryID = candidate
+		node.isPrimary = false
+		return
+	}
+
+	// WE ARE NEW PRIMARY
+	node.isPrimary = true
+	node.primaryID = node.nodeID
+	node.lastHeartbeat = time.Now()
+
+	log.Printf("[%s] ELECTED as NEW PRIMARY", node.nodeID)
+}
+
+func (node *AuctionServiceNode) Bid(ctx context.Context, req *proto.BidRequest) (*proto.BidResponse, error) {
+
+	node.mu.Lock()
+	isPrimary := node.isPrimary
+	currentPrimary := node.primaryID
+	node.mu.Unlock()
+
+	// forward if not primary
+	if !isPrimary {
+		primaryClient, ok := node.peers[currentPrimary]
 		if !ok {
-			return &proto.BidResponse{Success: false, Message: "Cannot reach primary"}, nil
+			return &proto.BidResponse{Success: false, Message: "Primary unavailable"}, nil
 		}
 		return primaryClient.Bid(ctx, req)
 	}
 
+	// PRIMARY HANDLES BID
 	node.mu.Lock()
-	if node.state.AuctionOpen == false {
+	if !node.state.AuctionOpen {
 		node.mu.Unlock()
-		return &proto.BidResponse{Success: false, Message: "Auction is closed."}, nil
+		return &proto.BidResponse{Success: false, Message: "Auction closed"}, nil
 	}
 	if int(req.Amount) <= node.state.HighestBid {
 		node.mu.Unlock()
-		return &proto.BidResponse{Success: false, Message: "Bid is too low."}, nil
+		return &proto.BidResponse{Success: false, Message: "Bid too low"}, nil
 	}
-
 	stagedBidder := req.BidderId
 	stagedAmount := int(req.Amount)
 	node.mu.Unlock()
 
+	// replicate
 	ok := node.replicateStateSync(stagedAmount, stagedBidder)
 	if !ok {
 		return &proto.BidResponse{Success: false, Message: "Replication failed"}, nil
 	}
 
 	node.mu.Lock()
-	if _, present := node.state.BidsByClient[stagedBidder]; !present {
-		node.state.BidsByClient[stagedBidder] = 0
-	}
 	node.state.BidsByClient[stagedBidder] = stagedAmount
 	node.state.HighestBid = stagedAmount
 	node.state.HighestBidder = stagedBidder
 	node.mu.Unlock()
 
-	return &proto.BidResponse{Success: true, Message: "Bid accepted."}, nil
-}
-
-func (node *AuctionServiceNode) GetResult(ctx context.Context, req *proto.ResultRequest) (*proto.ResultResponse, error) {
-	if !node.isPrimary {
-		if primaryClient, ok := node.peers[node.primaryID]; ok {
-			return primaryClient.GetResult(ctx, req)
-		}
-	}
-	node.mu.Lock()
-	defer node.mu.Unlock()
-	return &proto.ResultResponse{WinnerId: node.state.HighestBidder, WinningBid: int32(node.state.HighestBid)}, nil
-}
-
-func (node *AuctionServiceNode) UpdateState(ctx context.Context, req *proto.UpdateStateRequest) (*proto.UpdateStateResponse, error) {
-	node.mu.Lock()
-	defer node.mu.Unlock()
-
-	node.state.HighestBid = int(req.HighestBid)
-	node.state.HighestBidder = req.HighestBidder
-	return &proto.UpdateStateResponse{
-		Success: true,
-		Message: "State updated successfully.",
-	}, nil
-
+	return &proto.BidResponse{Success: true, Message: "Bid accepted"}, nil
 }
 
 func (node *AuctionServiceNode) replicateStateSync(amount int, bidder string) bool {
@@ -156,8 +213,8 @@ func (node *AuctionServiceNode) replicateStateSync(amount int, bidder string) bo
 
 	var wg sync.WaitGroup
 	ackCh := make(chan bool, len(node.peers)+1)
-	// self-ack
-	ackCh <- true
+
+	ackCh <- true // self ack
 
 	for peerID, client := range node.peers {
 		wg.Add(1)
@@ -174,6 +231,7 @@ func (node *AuctionServiceNode) replicateStateSync(amount int, bidder string) bo
 			ackCh <- resp.Success
 		}(peerID, client)
 	}
+
 	wg.Wait()
 	close(ackCh)
 
@@ -183,16 +241,39 @@ func (node *AuctionServiceNode) replicateStateSync(amount int, bidder string) bo
 			positives++
 		}
 	}
+
 	total := len(node.peers) + 1
 	quorum := total/2 + 1
+
 	return positives >= quorum
+}
+
+func (node *AuctionServiceNode) GetResult(ctx context.Context, req *proto.ResultRequest) (*proto.ResultResponse, error) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	return &proto.ResultResponse{
+		WinnerId:   node.state.HighestBidder,
+		WinningBid: int32(node.state.HighestBid),
+	}, nil
+}
+
+func (node *AuctionServiceNode) UpdateState(ctx context.Context, req *proto.UpdateStateRequest) (*proto.UpdateStateResponse, error) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	node.state.HighestBid = int(req.HighestBid)
+	node.state.HighestBidder = req.HighestBidder
+	return &proto.UpdateStateResponse{
+		Success: true,
+		Message: "State updated successfully.",
+	}, nil
+
 }
 
 func main() {
 	nodeID := flag.String("id", "node1", "Unique node ID")
 	port := flag.String("port", ":5001", "Port to listen on")
-	isPrimary := flag.Bool("primary", false, "Is this node primary?")
-	primaryID := flag.String("primary-id", "node1", "Current primary node ID")
 	flag.Parse()
 
 	allNodes := map[string]string{
@@ -203,17 +284,22 @@ func main() {
 
 	delete(allNodes, *nodeID)
 
-	node := NewAuctionServiceNode(*nodeID, *isPrimary, allNodes, *primaryID)
+	node := NewAuctionServiceNode(*nodeID, allNodes)
 
 	go func() {
 		time.Sleep(100 * time.Second)
 		node.mu.Lock()
 		node.state.AuctionOpen = false
+		winner := node.state.HighestBidder
+		amount := node.state.HighestBid
 		node.mu.Unlock()
 
-		log.Printf(node.state.HighestBidder + " won the auction with a bid of " + strconv.Itoa(node.state.HighestBid))
-		log.Printf("[%s] Auction closed\n", *nodeID)
+		log.Printf("AUCTION CLOSED → %s wins with %d", winner, amount)
 	}()
+
+	// start heartbeat processes
+	go node.startHeartbeatSender()
+	go node.monitorPrimary()
 
 	// Start gRPC server
 	lis, err := net.Listen("tcp", *port)
@@ -224,7 +310,7 @@ func main() {
 	grpcServer := grpc.NewServer()
 	proto.RegisterAuctionServiceServer(grpcServer, node)
 
-	log.Printf("[%s] Node running on %s (primary=%v)\n", *nodeID, *port, *isPrimary)
+	log.Printf("[%s] Node running on %s (primary=%v)\n", *nodeID, *port, node.isPrimary)
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("[%s] gRPC server failed: %v", *nodeID, err)
 	}

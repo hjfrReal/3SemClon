@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -135,24 +136,24 @@ func main() {
 		go runSequence(b, seq, ds, &wg)
 	}
 	wg.Wait()
-	/*
-		// retrieve final results from all nodes
-		fmt.Println("Final results from each node:")
-		for _, addr := range []string{"localhost:5001", "localhost:5002", "localhost:5003"} {
-			conn, err := grpc.Dial(addr, grpc.WithInsecure())
-			if err != nil {
-				log.Printf("Failed to connect to %s: %v", addr, err)
-				continue
-			}
-			client := proto.NewAuctionServiceClient(conn)
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			res, err := client.GetResult(ctx, &proto.ResultRequest{})
-			cancel()
-			conn.Close()
-			if err != nil {
-				log.Printf("GetResult from %s error: %v", addr, err)
-				continue
-			}
-			fmt.Printf("%s -> Winner: %s bid=%v\n", addr, res.WinnerId, res.WinningBid)
-		}*/
+
+	// retrieve final results from all nodes
+	fmt.Println("Final results from each node:")
+	for _, addr := range []string{"localhost:5001", "localhost:5002", "localhost:5003"} {
+		conn, err := grpc.Dial(addr, grpc.WithInsecure())
+		if err != nil {
+			log.Printf("Failed to connect to %s: %v", addr, err)
+			continue
+		}
+		client := proto.NewAuctionServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		res, err := client.GetResult(ctx, &proto.ResultRequest{})
+		cancel()
+		conn.Close()
+		if err != nil {
+			log.Printf("GetResult from %s error: %v", addr, err)
+			continue
+		}
+		fmt.Printf("%s -> Winner: %s bid=%v\n", addr, res.WinnerId, res.WinningBid)
+	}
 }

@@ -6,6 +6,7 @@ service AuctionService {
     rpc Bid(BidRequest) returns (BidResponse);
     rpc GetResult(ResultRequest) returns (ResultResponse);
     rpc UpdateState(UpdateStateRequest) returns (UpdateStateResponse);
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
 
 message BidRequest {
@@ -36,4 +37,12 @@ message UpdateStateRequest {
 message UpdateStateResponse {
     bool success = 1;
     string message = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+}
+
+message HeartbeatResponse {
+    bool ok = 1;    
 }
