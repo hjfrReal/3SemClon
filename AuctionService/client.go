@@ -14,10 +14,11 @@ func main() {
 
 	bidder := flag.String("bidder", "ClientA", "Bidder ID")
 	amount := flag.Int("amount", 100, "Bid amount")
+	server := flag.String("server", "5001", "Server port to connect to")
 
 	flag.Parse()
 
-	conn, err := grpc.Dial("localhost:5001", grpc.WithInsecure())
+	conn, err := grpc.Dial("localhost:"+*server, grpc.WithInsecure()) // uses the flag server
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
